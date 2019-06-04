@@ -31,8 +31,27 @@ import torchvision.transforms as transforms
 from torch.autograd import Variable
 from torch.utils.data import Dataset, DataLoader, ConcatDataset
 
+import bbox
+
+
+batch_size = 32
+meta = defaultdict()
+meta['anchors'] = 5
+meta['classes'] = 20
+meta['batch_size'] = batch_size
+meta['threshold'] = 0.6
+meta['anchor_bias'] = np.array([1.08,1.19,  3.42,4.41,  6.63,11.38,  9.42,5.11,  16.62,10.52])
+meta['scale_no_obj'] = 1
+meta['scale_coords'] = 1
+meta['scale_class'] = 1
+meta['scale_obj']  = 5
+meta['iteration'] = 0 
+#meta['train_samples'] = len(voc_2007) + sum(voc_2012["train"]==1)
+#meta['iterations_per_epoch'] = meta['train_samples']/batch_size
+
 
 def Yolov2Loss(output, labels, n_truths):
+
     B = meta['anchors']
     C = meta['classes']
     batch_size = meta['batch_size']
@@ -115,7 +134,7 @@ def Yolov2Loss(output, labels, n_truths):
                                  3)
         true_labels = labels[batch, :n_true, 1:]
 
-        bboxes_iou = bbox_overlap_iou(pred_outputs, true_labels, False)
+        bboxes_iou = bbox.bbox_overlap_iou(pred_outputs, true_labels, False)
 
         # objectness loss (if iou < threshold)
         boxes_max_iou = torch.max(bboxes_iou, -1)[0]
@@ -138,7 +157,7 @@ def Yolov2Loss(output, labels, n_truths):
         for truth_iter in torch.arange(n_true):
             truth_iter = int(truth_iter)
             truth_box = labels[batch, truth_iter]
-            anchor_select = bbox_overlap_iou(
+            anchor_select = bbox.bbox_overlap_iou(
                 torch.cat([zero_pad.t(), truth_box[3:]], 0).t(), anchor_padded,
                 True)
 

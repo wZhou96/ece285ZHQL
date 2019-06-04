@@ -88,7 +88,7 @@ class Rescale(object):
         image = cv2.resize(image, (new_w, new_h))
         
         bboxes = deepcopy(bboxes)
-        bboxes = np.array(bboxes, np.float64)
+        bboxes = np.array(bboxes, np.float32)
         bboxes[:, 1] *= new_w*1.0/w
         bboxes[:, 2] *= new_h*1.0/h
         bboxes[:, 3] *= new_w*1.0/w
@@ -126,7 +126,7 @@ class Normalize(object):
     
     def __call__(self, sample):
         image, bboxes = sample['image'], sample['bboxes']
-        image = np.array(image, np.float64)
+        image = np.array(image, np.float32)
         image = image * 2 / 255.0 - 1
         return {"image": image, "bboxes": bboxes}
 
@@ -152,7 +152,7 @@ class ToTensor(object):
         # torch image: C X H X W
         image = image.transpose((2, 0, 1))
         if len(bboxes) == 0:
-            return {'image': torch.from_numpy(image), 'bboxes': torch.DoubleTensor()}
+            return {'image': torch.from_numpy(image), 'bboxes': torch.Tensor()}
         return {'image': torch.from_numpy(image), 'bboxes': torch.from_numpy(bboxes)}
     
 
@@ -209,6 +209,7 @@ class VOCDataset(td.Dataset):
         else:
             zero_fill = self.max_truth-n_true
             nullbox = -1*(np.ones(5*zero_fill).reshape(zero_fill, 5))
+            nullbox = nullbox.astype(np.float32)
             if n_true == 0:
                 bboxes = nullbox
             else:
