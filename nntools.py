@@ -139,14 +139,27 @@ class Experiment(object):
             set and the validation set. (default: False)
     """
 
-    def __init__(self, net, train_set, val_set, optimizer, stats_manager,
-                 output_dir=None, batch_size=16, perform_validation_during_training=False):
+    def __init__(self,
+                 net,
+                 train_set,
+                 val_set,
+                 optimizer,
+                 stats_manager,
+                 output_dir=None,
+                 batch_size=16,
+                 perform_validation_during_training=False):
 
         # Define data loaders
-        train_loader = td.DataLoader(train_set, batch_size=batch_size, shuffle=True,
-                                     drop_last=True, pin_memory=True)
-        val_loader = td.DataLoader(val_set, batch_size=batch_size, shuffle=False,
-                                   drop_last=True, pin_memory=True)
+        train_loader = td.DataLoader(train_set,
+                                     batch_size=batch_size,
+                                     shuffle=True,
+                                     drop_last=True,
+                                     pin_memory=True)
+        val_loader = td.DataLoader(val_set,
+                                   batch_size=batch_size,
+                                   shuffle=False,
+                                   drop_last=True,
+                                   pin_memory=True)
 
         # Initialize history
         history = []
@@ -168,7 +181,8 @@ class Experiment(object):
                 if f.read()[:-1] != repr(self):
                     raise ValueError(
                         "Cannot create this experiment: "
-                        "I found a checkpoint conflicting with the current setting.")
+                        "I found a checkpoint conflicting with the current setting."
+                    )
             self.load()
         else:
             self.save()
@@ -180,13 +194,22 @@ class Experiment(object):
 
     def setting(self):
         """Returns the setting of the experiment."""
-        return {'Net': self.net,
-                'TrainSet': self.train_set,
-                'ValSet': self.val_set,
-                'Optimizer': self.optimizer,
-                'StatsManager': self.stats_manager,
-                'BatchSize': self.batch_size,
-                'PerformValidationDuringTraining': self.perform_validation_during_training}
+        return {
+            'Net':
+            self.net,
+            'TrainSet':
+            self.train_set,
+            'ValSet':
+            self.val_set,
+            'Optimizer':
+            self.optimizer,
+            'StatsManager':
+            self.stats_manager,
+            'BatchSize':
+            self.batch_size,
+            'PerformValidationDuringTraining':
+            self.perform_validation_during_training
+        }
 
     def __repr__(self):
         """Pretty printer showing the setting of the experiment. This is what
@@ -200,9 +223,11 @@ class Experiment(object):
 
     def state_dict(self):
         """Returns the current state of the experiment."""
-        return {'Net': self.net.state_dict(),
-                'Optimizer': self.optimizer.state_dict(),
-                'History': self.history}
+        return {
+            'Net': self.net.state_dict(),
+            'Optimizer': self.optimizer.state_dict(),
+            'History': self.history
+        }
 
     def load_state_dict(self, checkpoint):
         """Loads the experiment from the input checkpoint."""
@@ -257,22 +282,25 @@ class Experiment(object):
         for epoch in range(start_epoch, num_epochs):
             s = time.time()
             self.stats_manager.init()
-            for i in self.train_loader:
-                x, b, n = i['image'].cuda(), i['bboxes'].cuda(), i['n_true'].cuda()
+            for xdict in self.train_loader:
+                x = xdict['image'].to(self.net.device)
+                d = xdict['bboxes'].to(self.net.device)
+                ntrue = xdict['n_true'].to(self.net.device)
                 self.optimizer.zero_grad()
                 y = self.net.forward(x)
-                loss = self.net.criterion(y, [b, n])
+                loss = self.net.criterion(y, d, ntrue)
                 loss.backward()
                 self.optimizer.step()
                 with torch.no_grad():
-                    self.stats_manager.accumulate(loss.item(), x, y, [b, n])
+                    self.stats_manager.accumulate(loss.item(), x, y, d)
             if not self.perform_validation_during_training:
                 self.history.append(self.stats_manager.summarize())
             else:
                 self.history.append(
                     (self.stats_manager.summarize(), self.evaluate()))
-            print("Epoch {} (Time: {:.2f}s)".format(
-                self.epoch, time.time() - s))
+            print("Epoch {} (Time: {:.2f}s)".format(self.epoch,
+                                                    time.time() - s))
+            meta['iteration'] += meta['iterations_per_epoch']
             self.save()
             if plot is not None:
                 plot(self)
@@ -293,5 +321,3 @@ class Experiment(object):
                 self.stats_manager.accumulate(loss.item(), x, y, d)
         self.net.train()
         return self.stats_manager.summarize()
-
-

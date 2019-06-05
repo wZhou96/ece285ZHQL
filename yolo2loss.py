@@ -9,7 +9,7 @@ from copy import deepcopy
 import pandas as pd
 import struct, os
 import re, numpy as np
-from skimage import transform
+# from skimage import transform
 import itertools, operator
 import pickle
 from torch.optim.lr_scheduler import _LRScheduler
@@ -31,27 +31,52 @@ import torchvision.transforms as transforms
 from torch.autograd import Variable
 from torch.utils.data import Dataset, DataLoader, ConcatDataset
 
-import bbox
+def bbox_overlap_iou(bboxes1, bboxes2, is_anchor):
+    """
+    Args:
+        bboxes1: shape (total_bboxes1, 4)
+            with x1, y1, x2, y2 point order.
+        bboxes2: shape (total_bboxes2, 4)
+            with x1, y1, x2, y2 point order.
+        p1 *-----        
+           |     |
+           |_____* p2
+    Returns:
+        Tensor with shape (total_bboxes1, total_bboxes2)
+        with the IoU (intersection over union) of bboxes1[i] and bboxes2[j]
+        in [i, j].
+    """
+#     import pdb; pdb.set_trace()
+    x1, y1, w1, h1 = bboxes1.chunk(4, dim=-1)
+    x2, y2, w2, h2 = bboxes2.chunk(4, dim=-1)
+    
+    x11 = x1 - 0.5*w1
+    y11 = y1 - 0.5*h1
+    x12 = x1 + 0.5*w1
+    y12 = y1 + 0.5*h1
+    x21 = x2 - 0.5*w2
+    y21 = y2 - 0.5*h2
+    x22 = x2 + 0.5*w2
+    y22 = y2 + 0.5*h2
 
+    xI1 = torch.max(x11, x21.transpose(1, 0))
+    yI1 = torch.max(y11, y21.transpose(1, 0))
+    
+    xI2 = torch.min(x12, x22.transpose(1, 0))
+    yI2 = torch.min(y12, y22.transpose(1, 0))
 
-batch_size = 32
-meta = defaultdict()
-meta['anchors'] = 5
-meta['classes'] = 20
-meta['batch_size'] = batch_size
-meta['threshold'] = 0.6
-meta['anchor_bias'] = np.array([1.08,1.19,  3.42,4.41,  6.63,11.38,  9.42,5.11,  16.62,10.52])
-meta['scale_no_obj'] = 1
-meta['scale_coords'] = 1
-meta['scale_class'] = 1
-meta['scale_obj']  = 5
-meta['iteration'] = 0 
-#meta['train_samples'] = len(voc_2007) + sum(voc_2012["train"]==1)
-#meta['iterations_per_epoch'] = meta['train_samples']/batch_size
+    inner_box_w = torch.clamp((xI2 - xI1), min=0)
+    inner_box_h = torch.clamp((yI2 - yI1), min=0)
+    
+    inter_area = inner_box_w * inner_box_h
+    bboxes1_area = (x12 - x11) * (y12 - y11)
+    bboxes2_area = (x22 - x21) * (y22 - y21)
 
+    union = (bboxes1_area + bboxes2_area.transpose(1, 0)) - inter_area
+    return torch.clamp(inter_area / union, min=0)
 
-def Yolov2Loss(output, labels, n_truths):
-
+def loss(output, labels, n_truths):
+    
     B = meta['anchors']
     C = meta['classes']
     batch_size = meta['batch_size']
@@ -134,7 +159,7 @@ def Yolov2Loss(output, labels, n_truths):
                                  3)
         true_labels = labels[batch, :n_true, 1:]
 
-        bboxes_iou = bbox.bbox_overlap_iou(pred_outputs, true_labels, False)
+        bboxes_iou = bbox_overlap_iou(pred_outputs, true_labels, False)
 
         # objectness loss (if iou < threshold)
         boxes_max_iou = torch.max(bboxes_iou, -1)[0]
@@ -157,7 +182,7 @@ def Yolov2Loss(output, labels, n_truths):
         for truth_iter in torch.arange(n_true):
             truth_iter = int(truth_iter)
             truth_box = labels[batch, truth_iter]
-            anchor_select = bbox.bbox_overlap_iou(
+            anchor_select = bbox_overlap_iou(
                 torch.cat([zero_pad.t(), truth_box[3:]], 0).t(), anchor_padded,
                 True)
 
