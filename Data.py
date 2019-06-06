@@ -213,8 +213,7 @@ class VOCDataset(td.Dataset):
                 bboxes = nullbox
             else:
                 bboxes = np.concatenate([bboxes, nullbox])
-        data["image"]= data["image"].float()
-        data["bboxes"] = torch.from_numpy(bboxes).float()
+        data["bboxes"] = torch.from_numpy(bboxes)
         data["n_true"] = torch.tensor(n_true)
         return data
     
@@ -235,8 +234,12 @@ def get_traintest(root_dir):
 def getdata(root_dir, image_size=416, sample=-1, batch_size=64):
     transform = tv.transforms.Compose([
         ### incomplete, bunch of transform funtions needed to add
+#         RandomCrop(),
+#         RandomFlip(),
         Rescale((image_size, image_size)),
+        TransformBoxCoords(),
         Normalize(),
+        EliminateSmallBoxes(0.025),
         ToTensor(),
     ])
     VOCtotal = get_traintest(root_dir)

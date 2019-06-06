@@ -37,8 +37,6 @@ from torch.utils.data import Dataset, DataLoader, ConcatDataset
 import yolo2loss
 import nntools as nt
 
-
-
 class Yolov2(nt.NeuralNetwork):
     
     def __init__(self):
@@ -147,8 +145,8 @@ class Yolov2(nt.NeuralNetwork):
 
         return out
     
-    def criterion(self, y, d, n_truths):
-        return yolo2loss.loss(y, d, n_truths)
+    def criterion(self, y, d, n_truths, meta):
+        return yolo2loss.loss(y, d, n_truths, meta)
         
 
 

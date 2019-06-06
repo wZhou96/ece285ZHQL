@@ -145,6 +145,7 @@ class Experiment(object):
                  val_set,
                  optimizer,
                  stats_manager,
+                 meta, 
                  output_dir=None,
                  batch_size=16,
                  perform_validation_during_training=False):
@@ -282,13 +283,17 @@ class Experiment(object):
         for epoch in range(start_epoch, num_epochs):
             s = time.time()
             self.stats_manager.init()
+            i = 0
             for xdict in self.train_loader:
-                x = xdict['image'].to(self.net.device)
-                d = xdict['bboxes'].to(self.net.device)
+                if i%45 == 0:
+                    print('batch',i)
+                i += 1 
+                x = xdict['image'].to(self.net.device).float()
+                d = xdict['bboxes'].to(self.net.device).float()
                 ntrue = xdict['n_true'].to(self.net.device)
                 self.optimizer.zero_grad()
                 y = self.net.forward(x)
-                loss = self.net.criterion(y, d, ntrue)
+                loss = self.net.criterion(y, d, ntrue, self.meta)
                 loss.backward()
                 self.optimizer.step()
                 with torch.no_grad():
@@ -300,7 +305,7 @@ class Experiment(object):
                     (self.stats_manager.summarize(), self.evaluate()))
             print("Epoch {} (Time: {:.2f}s)".format(self.epoch,
                                                     time.time() - s))
-            meta['iteration'] += meta['iterations_per_epoch']
+            self.meta['iteration'] += self.meta['iterations_per_epoch'] 
             self.save()
             if plot is not None:
                 plot(self)
@@ -314,10 +319,11 @@ class Experiment(object):
         self.stats_manager.init()
         self.net.eval()
         with torch.no_grad():
-            for x, d in self.val_loader:
-                x, d = x.to(self.net.device), d.to(self.net.device)
+            for xdict in self.val_loader:
+                x, d = xdict['image'].to(self.net.device).float(), xdict['bboxes'].to(self.net.device).float()
+                ntrue = xdict['n_true'].to(self.net.device)
                 y = self.net.forward(x)
-                loss = self.net.criterion(y, d)
+                loss = self.net.criterion(y, d, ntrue, self.meta)
                 self.stats_manager.accumulate(loss.item(), x, y, d)
         self.net.train()
         return self.stats_manager.summarize()
