@@ -6,6 +6,7 @@
 
 get_ipython().run_line_magic('matplotlib', 'notebook')
 import os
+from collections import defaultdict
 import numpy as np 
 import torch
 import torch.nn as nn
@@ -15,6 +16,9 @@ import torchvision as tv
 from PIL import Image
 import matplotlib.pyplot as plt
 from matplotlib import patches as patches #
+from torch.autograd import Variable
+import itertools, operator
+
 
 get_ipython().system('rm nntools.py')
 
@@ -24,6 +28,16 @@ import nntools as nt
 
 # In[19]:
 
+meta = defaultdict()
+meta['anchors'] = 5
+meta['classes'] = 20
+meta['threshold'] = 0.6
+meta['anchor_bias'] = np.array([1.08,1.19,  3.42,4.41,  6.63,11.38,  9.42,5.11,  16.62,10.52])
+meta['scale_no_obj'] = 1
+meta['scale_coords'] = 1
+meta['scale_class'] = 1
+meta['scale_obj']  = 5
+meta['iteration'] = 0 
 
 def bbox_iou(bbox1, bbox2):
     
@@ -63,10 +77,10 @@ def draw_bbox(img, bbox):
     
     plt.show()
     
-im = plt.imread('./img-Copy1.png')
-a = torch.Tensor([[80, 35, 40, 30], [150, 80, 20, 60]])
+# im = plt.imread('./img-Copy1.png')
+# a = torch.Tensor([[80, 35, 40, 30], [150, 80, 20, 60]])
 
-draw_bbox(im, a)
+# draw_bbox(im, a)
 
 
 # In[ ]:
@@ -120,6 +134,7 @@ def get_nms_boxes(output, obj_thresh, iou_thresh):
             
         pred_outputs = torch.cat([adjusted_coords[n], adjusted_wh[n]], 3)
         pred_bboxes = pred_outputs.contiguous().view(H*W*B, 4)
+                
         ious = bbox_iou(pred_bboxes, pred_bboxes)
         
         confidences = adjusted_obj[n].contiguous().view(H*W*B)
@@ -130,7 +145,7 @@ def get_nms_boxes(output, obj_thresh, iou_thresh):
    
         for class_id in range(n_classes):
             bboxes_state = ((class_ids==class_id).float() * (scores[:, class_id] > obj_thresh).float() * box_tags).long().float()
-        
+                        
             while (torch.sum(bboxes_state==-1) > 0).data[0]:
                 max_conf, index = torch.max(scores[:, class_id] * (bboxes_state==-1).float(), 0)
                 bboxes_state = ((ious[index] < iou_thresh)[0].float() * bboxes_state).long().float()
