@@ -85,14 +85,18 @@ class Yolov2(nt.NeuralNetwork):
         self.batchnorm18 = nn.BatchNorm2d(1024)
 
         self.conv19 = nn.Conv2d(in_channels=1024, out_channels=1024, kernel_size=3, stride=1, padding=1, bias=False)
+        nn.init.kaiming_normal_(self.conv19.weight.data, nonlinearity='relu')
         self.batchnorm19 = nn.BatchNorm2d(1024)
         self.conv20 = nn.Conv2d(in_channels=1024, out_channels=1024, kernel_size=3, stride=1, padding=1, bias=False)
+        nn.init.kaiming_normal_(self.conv20.weight.data, nonlinearity='relu')
         self.batchnorm20 = nn.BatchNorm2d(1024)
         
         self.conv21 = nn.Conv2d(in_channels=3072, out_channels=1024, kernel_size=3, stride=1, padding=1, bias=False)
+        nn.init.kaiming_normal_(self.conv21.weight.data, nonlinearity='relu')
         self.batchnorm21 = nn.BatchNorm2d(1024)
         
         self.conv22 = nn.Conv2d(in_channels=1024, out_channels=125, kernel_size=1, stride=1, padding=0)
+        nn.init.kaiming_normal_(self.conv22.weight.data, nonlinearity='relu')
         
     def reorg_layer(self, x):
         stride = 2
