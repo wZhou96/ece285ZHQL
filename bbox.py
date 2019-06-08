@@ -19,11 +19,10 @@ from matplotlib import patches as patches #
 from torch.autograd import Variable
 import itertools, operator
 
+# get_ipython().system('rm nntools.py')
 
-get_ipython().system('rm nntools.py')
-
-get_ipython().system('ln -s /datasets/ee285f-public/nntools.py')
-import nntools as nt
+# get_ipython().system('ln -s /datasets/ee285f-public/nntools.py')
+import nntool as nt
 
 
 # In[19]:

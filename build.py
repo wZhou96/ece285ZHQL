@@ -34,8 +34,9 @@ import torchvision
 import torchvision.transforms as transforms
 from torch.autograd import Variable
 from torch.utils.data import Dataset, DataLoader, ConcatDataset
-import yolo2loss
-import nntools as nt
+# import yolo2loss
+import nntool as nt
+from loss import YoloLoss
 
 class Yolov2(nt.NeuralNetwork):
     
@@ -149,8 +150,11 @@ class Yolov2(nt.NeuralNetwork):
 
         return out
     
-    def criterion(self, y, d, n_truths, meta):
-        return yolo2loss.loss(y, d, n_truths, meta)
+    def criterion(self, y, d, ntrue):
+        anchors = [(1.3221, 1.73145), (3.19275, 4.00944), (5.05587, 8.09892), (9.47112, 4.84053),
+                          (11.2364, 10.0071)]
+        loss = YoloLoss(20, anchors)
+        return loss.forward(y, d, ntrue)
         
 
 
