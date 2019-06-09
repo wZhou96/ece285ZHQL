@@ -1,23 +1,42 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[2]:
 
-
+get_ipython().run_line_magic('matplotlib', 'inline')
+import matplotlib.pyplot as plt
+import cv2
+import os
+import glob
+from PIL import Image
 from collections import defaultdict
-import struct
+import math
+from copy import deepcopy
+import pandas as pd
+import struct, os
+import re, numpy as np
+import itertools, operator
+import pickle
+from torch.optim.lr_scheduler import _LRScheduler
+from nltk.corpus import wordnet as wn
+
+import os
+import sys
+import xml.etree.ElementTree as ET
+import glob
+
 import numpy as np
+from PIL import Image
 import torch
 from torch import nn
 import torch.nn.functional as F
 import torchvision.datasets as dsets
-import torchvision as tv
+import torchvision
+import torchvision.transforms as transforms
 from torch.autograd import Variable
-
-import nntools as nt
-
-# In[4]:
-
+from torch.utils.data import Dataset, DataLoader, ConcatDataset
+# import yolo2loss
+import nntool as nt
+from loss import YoloLoss
 
 class Yolov2(nt.NeuralNetwork):
     
@@ -137,11 +156,20 @@ class Yolov2(nt.NeuralNetwork):
         h = self.conv22(h)
 
         return h
+    
+    def criterion(self, y, d, ntrue):
+        anchors = [(1.3221, 1.73145), (3.19275, 4.00944), (5.05587, 8.09892), (9.47112, 4.84053),
+                          (11.2364, 10.0071)]
+        loss = YoloLoss(20, anchors)
+        return loss.forward(y, d, ntrue)
+        
 
 
+# In[ ]:
 def load_pretrained_weights(model):
     group_mapping = defaultdict(lambda: defaultdict())
     cnt = 0
+    print(model.children())
     for child in model.children():
         if type(child) == nn.Conv2d:
             cnt += 1
@@ -177,3 +205,17 @@ def load_pretrained_weights(model):
             param.requires_grad = False
     
     return model
+
+    
+def model_freeze_upto(model, layer_x):
+    childs = list(model.children())
+    for i in range(len(childs)):
+        child = childs[i]
+        for param in child.parameters():
+            if i < layer_x:
+                param.requires_grad = False
+            else:
+                param.requires_grad = True
+
+
+

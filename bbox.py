@@ -6,6 +6,7 @@
 
 get_ipython().run_line_magic('matplotlib', 'notebook')
 import os
+from collections import defaultdict
 import numpy as np 
 import torch
 import torch.nn as nn
@@ -15,14 +16,28 @@ import torchvision as tv
 from PIL import Image
 import matplotlib.pyplot as plt
 from matplotlib import patches as patches #
+from torch.autograd import Variable
+import itertools, operator
 
 # get_ipython().system('rm nntools.py')
 
 # get_ipython().system('ln -s /datasets/ee285f-public/nntools.py')
-import nntools as nt
+import nntool as nt
 
 
 # In[19]:
+
+meta = defaultdict()
+meta['anchors'] = 5
+meta['classes'] = 20
+meta['threshold'] = 0.6
+meta['anchor_bias'] = np.array([1.08,1.19,  3.42,4.41,  6.63,11.38,  9.42,5.11,  16.62,10.52])
+meta['scale_no_obj'] = 1
+meta['scale_coords'] = 1
+meta['scale_class'] = 1
+meta['scale_obj']  = 5
+meta['iteration'] = 0 
+
 
 
 def bbox_overlap_iou(bboxes1, bboxes2, is_anchor):
@@ -80,103 +95,44 @@ def bbox_overlap_iou(bboxes1, bboxes2, is_anchor):
     return torch.clamp(inter_area / union, min=0)
 
 
-# In[47]:
 
-
-def draw_bbox(img, bbox):
-    
-    x1, y1, w1, h1 = torch.chunk(bbox, 4, dim = 1)
-    
-    fig, ax = plt.subplots(1)
-    ax.imshow(img)
-    
-    for x, y, w, h in zip(x1, y1, w1, h1):
-        rect = patches.Rectangle((x-0.5*w, y-0.5*h), w, h, linewidth=2, fill = False, color=np.random.rand(3,))
-        ax.add_patch(rect)
-    
-    plt.show()
-
-
-
-# In[ ]:
-
-
-def get_nms_boxes(output, obj_thresh, iou_thresh):
-#     import pdb; pdb.set_trace()
-    N, C, H, W = output.size()
-    N, C, H, W = int(N), int(C), int(H), int(W)
-    B = meta['anchors']
-    anchor_bias = meta['anchor_bias']
-    n_classes = meta['classes']
-    
-    # -1 => unprocesse, 0 => suppressed, 1 => retained
-    box_tags = Variable(-1 * torch.ones(H*W*B)).float()
-    
-    wh = Variable(torch.from_numpy(np.reshape([W, H], [1, 1, 1, 1, 2]))).float()
-    anchor_bias_var = Variable(torch.from_numpy(np.reshape(anchor_bias, [1, 1, 1, B, 2]))).float()
-    
-    w_list = np.array(list(range(W)), np.float32)
-    wh_ids = Variable(torch.from_numpy(np.array(list(map(lambda x: np.array(list(itertools.product(w_list, [x]))), range(H)))).reshape(1, H, W, 1, 2))).float() 
-    
-    if torch.cuda.is_available():
-        wh = wh.cuda()
-        wh_ids = wh_ids.cuda()
-        box_tags = box_tags.cuda()
-        anchor_bias_var = anchor_bias_var.cuda()                           
-
-    anchor_bias_var = anchor_bias_var / wh
-
-    predicted = output.permute(0, 2, 3, 1)
-    predicted = predicted.contiguous().view(N, H, W, B, -1)
-    sigmoid = torch.nn.Sigmoid()
-    softmax = torch.nn.Softmax(dim=4)
-    
-    adjusted_xy = sigmoid(predicted[:, :, :, :, :2])
-    adjusted_obj = sigmoid(predicted[:, :, :, :, 4:5])
-    adjusted_classes = softmax(predicted[:, :, :, :, 5:])
-    
-    adjusted_coords = (adjusted_xy + wh_ids) / wh
-    adjusted_wh = torch.exp(predicted[:, :, :, :, 2:4]) * anchor_bias_var
-
-    batch_boxes = defaultdict()
-
-    for n in range(N):
+def draw_boundary_box_fraction(image_dict):
+    """Show image with landmarks"""
+    image = image_dict['image']
+    height, width, channels = image.shape
+    bboxes = image_dict['bboxes']
+    image = (image + 1) / 2
+    image[image < 0] = 0
+    image[image > 1] = 1 
+    plt.imshow(image)
+    for bbox in bboxes:
+        x = bbox[1] * width
+        y = bbox[2] * height
+        w = bbox[3] * width
+        h = bbox[4] * height
+        xmin = max(0, int(x - w*0.5))
+        ymin = max(0, int(y - h*0.5))
+        xmax = min(int(x + w*0.5), width)
+        ymax = min(int(y + h*0.5), height)
+        plt.plot((xmin, xmin), (ymin, ymax), 'r')
+        plt.plot((xmin, xmax), (ymin, ymin), 'r')
+        plt.plot((xmax, xmax), (ymin, ymax), 'r')
+        plt.plot((xmin, xmax), (ymax, ymax), 'r')
         
-        scores = (adjusted_obj[n] * adjusted_classes[n]).contiguous().view(H*W*B, -1)
-    
-        class_probs = adjusted_classes[n].contiguous().view(H*W*B, -1)
-        class_ids = torch.max(class_probs, 1)[1]
-            
-        pred_outputs = torch.cat([adjusted_coords[n], adjusted_wh[n]], 3)
-        pred_bboxes = pred_outputs.contiguous().view(H*W*B, 4)
-        ious = bbox_iou(pred_bboxes, pred_bboxes)
-        
-        confidences = adjusted_obj[n].contiguous().view(H*W*B)
-        # get all boxes with tag -1
-        final_boxes = Variable(torch.FloatTensor())
-        if torch.cuda.is_available():
-            final_boxes = final_boxes.cuda()
-   
-        for class_id in range(n_classes):
-            bboxes_state = ((class_ids==class_id).float() * (scores[:, class_id] > obj_thresh).float() * box_tags).long().float()
-        
-            while (torch.sum(bboxes_state==-1) > 0).data[0]:
-                max_conf, index = torch.max(scores[:, class_id] * (bboxes_state==-1).float(), 0)
-                bboxes_state = ((ious[index] < iou_thresh)[0].float() * bboxes_state).long().float()
-                bboxes_state[index] = 1
+def draw_bbox_torch(img):
+    image = np.transpose(np.array(img['image'].numpy()), (1, 2, 0))
+    bboxes = img['bboxes'].numpy()
+    n_true = np.sum(bboxes[:, 0]!=-1)
+    bboxes = bboxes[:n_true]
+    draw_boundary_box_fraction({"image": image, 'bboxes': bboxes})
 
-                index_vals = torch.cat([pred_bboxes[index], confidences[index].view(1, 1), class_probs[index]], 1)
-                if len(final_boxes.size()) == 0:
-                    final_boxes = index_vals
-                else:
-                    final_boxes = torch.cat([final_boxes, index_vals], 0)
-        
-        batch_boxes[n] = final_boxes
-        
-    return batch_boxes
+def draw_bbox_nms(torch_img, nms_output):
+    image = np.transpose(np.array(torch_img.data.numpy()), (1, 2, 0))
+    bboxes = nms_output[:, :4].data.numpy()
+    bboxes = np.concatenate([np.zeros(len(bboxes)).reshape(len(bboxes), 1), bboxes], 1)
+    print (bboxes)
+    draw_boundary_box_fraction({"image": image, 'bboxes': bboxes})
 
-
-# In[ ]:
 
 
 # Non Max Suppression
@@ -226,7 +182,7 @@ def get_nms_detections(output, obj_thresh, iou_thresh):
         class_probs = adjusted_classes[n].contiguous().view(H*W*B, -1)
         pred_outputs = torch.cat([adjusted_coords[n], adjusted_wh[n]], 3)
         pred_bboxes = pred_outputs.contiguous().view(H*W*B, 4)
-        ious = bbox_iou(pred_bboxes, pred_bboxes)
+        ious = bbox_overlap_iou(pred_bboxes, pred_bboxes, True)
         
         confidences = adjusted_obj[n].contiguous().view(H*W*B)
         bboxes_state = ((confidences>obj_thresh).float() * box_tags).long().float()
@@ -250,8 +206,6 @@ def get_nms_detections(output, obj_thresh, iou_thresh):
         
     return batch_boxes
 
-
-# In[ ]:
 
 
 def calc_map(boxes_dict, iou_threshold=0.5):

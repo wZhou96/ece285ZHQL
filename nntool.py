@@ -10,6 +10,7 @@ import torch
 from torch import nn
 import torch.utils.data as td
 from abc import ABC, abstractmethod
+from torch.autograd import Variable
 
 
 class NeuralNetwork(nn.Module, ABC):
@@ -139,14 +140,28 @@ class Experiment(object):
             set and the validation set. (default: False)
     """
 
-    def __init__(self, net, train_set, val_set, optimizer, stats_manager,
-                 output_dir=None, batch_size=16, perform_validation_during_training=False):
+    def __init__(self,
+                 net,
+                 train_set,
+                 val_set,
+                 optimizer,
+                 stats_manager,
+                 meta,
+                 output_dir=None,
+                 batch_size=16,
+                 perform_validation_during_training=False):
 
         # Define data loaders
-        train_loader = td.DataLoader(train_set, batch_size=batch_size, shuffle=True,
-                                     drop_last=True, pin_memory=True)
-        val_loader = td.DataLoader(val_set, batch_size=batch_size, shuffle=False,
-                                   drop_last=True, pin_memory=True)
+        train_loader = td.DataLoader(train_set,
+                                     batch_size=batch_size,
+                                     shuffle=True,
+                                     drop_last=True,
+                                     pin_memory=True)
+        val_loader = td.DataLoader(val_set,
+                                   batch_size=batch_size,
+                                   shuffle=False,
+                                   drop_last=True,
+                                   pin_memory=True)
 
         # Initialize history
         history = []
@@ -168,7 +183,8 @@ class Experiment(object):
                 if f.read()[:-1] != repr(self):
                     raise ValueError(
                         "Cannot create this experiment: "
-                        "I found a checkpoint conflicting with the current setting.")
+                        "I found a checkpoint conflicting with the current setting."
+                    )
             self.load()
         else:
             self.save()
@@ -176,17 +192,26 @@ class Experiment(object):
     @property
     def epoch(self):
         """Returns the number of epochs already performed."""
-        return len(self.history)
+        return int(len(self.history)/18)
 
     def setting(self):
         """Returns the setting of the experiment."""
-        return {'Net': self.net,
-                'TrainSet': self.train_set,
-                'ValSet': self.val_set,
-                'Optimizer': self.optimizer,
-                'StatsManager': self.stats_manager,
-                'BatchSize': self.batch_size,
-                'PerformValidationDuringTraining': self.perform_validation_during_training}
+        return {
+            'Net':
+            self.net,
+            'TrainSet':
+            self.train_set,
+            'ValSet':
+            self.val_set,
+            'Optimizer':
+            self.optimizer,
+            'StatsManager':
+            self.stats_manager,
+            'BatchSize':
+            self.batch_size,
+            'PerformValidationDuringTraining':
+            self.perform_validation_during_training
+        }
 
     def __repr__(self):
         """Pretty printer showing the setting of the experiment. This is what
@@ -200,9 +225,11 @@ class Experiment(object):
 
     def state_dict(self):
         """Returns the current state of the experiment."""
-        return {'Net': self.net.state_dict(),
-                'Optimizer': self.optimizer.state_dict(),
-                'History': self.history}
+        return {
+            'Net': self.net.state_dict(),
+            'Optimizer': self.optimizer.state_dict(),
+            'History': self.history
+        }
 
     def load_state_dict(self, checkpoint):
         """Loads the experiment from the input checkpoint."""
@@ -255,27 +282,35 @@ class Experiment(object):
         if plot is not None:
             plot(self)
         for epoch in range(start_epoch, num_epochs):
+#             self.stats_manager.init()
+            i = 0
             s = time.time()
-            self.stats_manager.init()
-            for i in self.train_loader:
-                x, b, n = i['image'].cuda(), i['bboxes'].cuda(), i['n_true'].cuda()
+            for xdict in self.train_loader:
+                x = xdict['image'].to(self.net.device).float()
+                d = xdict['bboxes'].to(self.net.device).float()
+                ntrue = xdict['n_true'].to(self.net.device)
                 self.optimizer.zero_grad()
                 y = self.net.forward(x)
-                loss = self.net.criterion(y, [b, n])
+                loss = self.net.criterion(y, d, ntrue)
                 loss.backward()
                 self.optimizer.step()
                 with torch.no_grad():
-                    self.stats_manager.accumulate(loss.item(), x, y, [b, n])
-            if not self.perform_validation_during_training:
-                self.history.append(self.stats_manager.summarize())
-            else:
-                self.history.append(
-                    (self.stats_manager.summarize(), self.evaluate()))
-            print("Epoch {} (Time: {:.2f}s)".format(
-                self.epoch, time.time() - s))
+                    self.stats_manager.accumulate(loss.item(), y, xdict['bboxes'], xdict['n_true'], 'train')
+                if i % 20 == 0:
+                    if not self.perform_validation_during_training:
+                        self.history.append(self.stats_manager.summarize())
+                    else:
+                        self.history.append((self.stats_manager.summarize(), self.evaluate()))
+                    self.stats_manager.init()
+#                 self.history.append({'loss': loss.item()})
+                    print("Epoch {} batch {} (Time: {:.2f}s)".format(self.epoch, i, time.time() - s))
+                    s = time.time()
+                i += 1
             self.save()
+#             self.meta['iteration'] += self.meta['iterations_per_epoch']
             if plot is not None:
                 plot(self)
+
         print("Finish training for {} epochs".format(num_epochs))
 
     def evaluate(self):
@@ -286,12 +321,12 @@ class Experiment(object):
         self.stats_manager.init()
         self.net.eval()
         with torch.no_grad():
-            for x, d in self.val_loader:
-                x, d = x.to(self.net.device), d.to(self.net.device)
+            for xdict in self.val_loader:
+                x = xdict['image'].to(self.net.device).float()
+                d = xdict['bboxes'].to(self.net.device).float()
+                ntrue = xdict['n_true'].to(self.net.device)
                 y = self.net.forward(x)
-                loss = self.net.criterion(y, d)
-                self.stats_manager.accumulate(loss.item(), x, y, d)
+                loss = self.net.criterion(y, d, ntrue)
+                self.stats_manager.accumulate(loss.item(), y, xdict['bboxes'], xdict['n_true'], 'test')
         self.net.train()
         return self.stats_manager.summarize()
-
-

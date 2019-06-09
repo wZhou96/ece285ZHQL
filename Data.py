@@ -40,6 +40,7 @@ class RandomCrop(object):
     
     def __call__(self, sample):
         image, bboxes = sample['image'], sample['bboxes']
+#         image, bboxes = sample[0], sample[1]
         result = self.imcv2_affine_trans(image)
         image, dims, trans_param = result
         scale, offs = trans_param
@@ -54,12 +55,14 @@ class RandomCrop(object):
         if sum(check_errors) > 0:
             bool_mask = ~ check_errors
             bboxes = bboxes[bool_mask]
+#         return image, bboxes
         return {"image": image, "bboxes": bboxes}
 
 class RandomFlip(object):
     
     def __call__(self, sample):
         image, bboxes = sample['image'], sample['bboxes']
+#         image, bboxes = sample[0], sample[1]
 
         bboxes = deepcopy(bboxes)
         flip = np.random.binomial(1, .5)
@@ -73,6 +76,7 @@ class RandomFlip(object):
         if sum(((bboxes[:, 1] >= bboxes[:, 3]) | (bboxes[:, 2] >= bboxes[:, 4])) & (bboxes[:, 0]!=-1)) > 0:
             print ("random flip")
         
+#         return image, bboxes
         return {"image": image, "bboxes": bboxes}
 
 class Rescale(object):
@@ -82,13 +86,15 @@ class Rescale(object):
         
     def __call__(self, sample):
         image, bboxes = sample['image'], sample['bboxes']
+#         image, bboxes = sample
+
         h, w, c = image.shape
         new_h = int(self.new_h)
         new_w = int(self.new_w)
         image = cv2.resize(image, (new_w, new_h))
         
         bboxes = deepcopy(bboxes)
-        bboxes = np.array(bboxes, np.float32)
+        bboxes = np.array(bboxes, np.float64)
         bboxes[:, 1] *= new_w*1.0/w
         bboxes[:, 2] *= new_h*1.0/h
         bboxes[:, 3] *= new_w*1.0/w
@@ -97,11 +103,13 @@ class Rescale(object):
             print ("random scale", bboxes, sample['bboxes'], new_w, new_h, w, h)
 
         return {"image": image, "bboxes": bboxes}
+#         return image, bboxes
 
 class TransformBoxCoords(object):
     
     def __call__(self, sample):
         image, bboxes = sample['image'], sample['bboxes']
+#         image, bboxes = sample[0], sample[1]
         height, width, _ = image.shape
         
         bboxes = deepcopy(bboxes)
@@ -119,16 +127,18 @@ class TransformBoxCoords(object):
         if sum(((bboxes[:, 1] <0) | (bboxes[:, 2]<0) | (bboxes[:, 3]<=0) | (bboxes[:, 4]<=0)) & (bboxes[:, 0]!=-1)) > 0:
             print ("random transform box coords")
 
-        
+#         return image, bboxes
         return {"image": image, "bboxes": bboxes}
 
 class Normalize(object):
     
     def __call__(self, sample):
         image, bboxes = sample['image'], sample['bboxes']
-        image = np.array(image, np.float32)
+#         image, bboxes = sample[0], sample[1]
+        image = np.array(image, np.float64)
         image = image * 2 / 255.0 - 1
         return {"image": image, "bboxes": bboxes}
+#         return image, bboxes
 
 class EliminateSmallBoxes(object):
     
@@ -137,23 +147,28 @@ class EliminateSmallBoxes(object):
 
     def __call__(self, sample):
         image, bboxes = sample['image'], sample['bboxes']
+#         image, bboxes = sample[0], sample[1]
         bool_mask = ((bboxes[: , 3] > self.thresh) & (bboxes[: , 4] > self.thresh))
         bboxes = bboxes[bool_mask]
         return {"image": image, "bboxes": bboxes}
+#         return image, bboxes
 
 
 class ToTensor(object):
 
     def __call__(self, sample):
         image, bboxes = sample['image'], sample['bboxes']
+#         image, bboxes = sample[0], sample[1]
 
         # swap color axis because
         # numpy image: H x W x C
         # torch image: C X H X W
         image = image.transpose((2, 0, 1))
         if len(bboxes) == 0:
-            return {'image': torch.from_numpy(image), 'bboxes': torch.Tensor()}
+            return {'image': torch.from_numpy(image), 'bboxes': torch.DoubleTensor()}
+#             return torch.from_numpy(image), torch.DoubleTensor()
         return {'image': torch.from_numpy(image), 'bboxes': torch.from_numpy(bboxes)}
+#         return torch.from_numpy(image), torch.from_numpy(bboxes)
     
 
 class VOCDataset(td.Dataset):
@@ -164,6 +179,9 @@ class VOCDataset(td.Dataset):
         np.random.shuffle(self.imgnames)
         if sample != -1:
             self.imgnames = self.imgnames[:sample]
+        self.classes = ['aeroplane', 'bicycle', 'bird', 'boat', 'bottle', 'bus', 'car', 'cat', 'chair', 'cow',
+                        'diningtable', 'dog', 'horse', 'motorbike', 'person', 'pottedplant', 'sheep', 'sofa', 'train',
+                        'tvmonitor']
         self.root_dir = root_dir
         self.transform = transform
         self.max_truth = max_truth
@@ -180,10 +198,9 @@ class VOCDataset(td.Dataset):
         for obj in tree_root.iter("object"):
             objname = obj.find("name").text
             class_id = np.argwhere(classes==objname)[0][0]
-            
             pos = obj.find("bndbox")
             xmin = int(pos.find("xmin").text)
-            ymin = int(pos.find("ymin").text)
+            ymin = int(float(pos.find("ymin").text))
             xmax = int(pos.find("xmax").text)
             ymax = int(pos.find("ymax").text)
             box = [class_id, xmin, ymin, xmax, ymax]
@@ -209,13 +226,12 @@ class VOCDataset(td.Dataset):
         else:
             zero_fill = self.max_truth-n_true
             nullbox = -1*(np.ones(5*zero_fill).reshape(zero_fill, 5))
-            nullbox = nullbox.astype(np.float32)
             if n_true == 0:
                 bboxes = nullbox
             else:
                 bboxes = np.concatenate([bboxes, nullbox])
         data["bboxes"] = torch.from_numpy(bboxes)
-        data["n_true"] = n_true
+        data["n_true"] = torch.tensor(n_true)
         return data
     
 def get_traintest(root_dir):
@@ -235,8 +251,12 @@ def get_traintest(root_dir):
 def getdata(root_dir, image_size=416, sample=-1, batch_size=64):
     transform = tv.transforms.Compose([
         ### incomplete, bunch of transform funtions needed to add
+        RandomCrop(),
+        RandomFlip(),
         Rescale((image_size, image_size)),
+        TransformBoxCoords(),
         Normalize(),
+        EliminateSmallBoxes(0.025),
         ToTensor(),
     ])
     VOCtotal = get_traintest(root_dir)
