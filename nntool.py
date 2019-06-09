@@ -192,7 +192,7 @@ class Experiment(object):
     @property
     def epoch(self):
         """Returns the number of epochs already performed."""
-        return len(self.history)
+        return int(len(self.history)/18)
 
     def setting(self):
         """Returns the setting of the experiment."""
@@ -282,13 +282,10 @@ class Experiment(object):
         if plot is not None:
             plot(self)
         for epoch in range(start_epoch, num_epochs):
-            s = time.time()
-            self.stats_manager.init()
+#             self.stats_manager.init()
             i = 0
             for xdict in self.train_loader:
-                if i % 45 == 0:
-                    print('batch', i)
-                i += 1
+                s = time.time()
                 x = Variable(xdict['image'], requires_grad=True).cuda().float()
                 d = Variable(xdict['bboxes'],
                              requires_grad=True).cuda().float()
@@ -300,17 +297,20 @@ class Experiment(object):
                 self.optimizer.step()
                 with torch.no_grad():
                     self.stats_manager.accumulate(loss.item(), x, y, d)
-            if not self.perform_validation_during_training:
-                self.history.append(self.stats_manager.summarize())
-            else:
-                self.history.append(
-                    (self.stats_manager.summarize(), self.evaluate()))
-            print("Epoch {} (Time: {:.2f}s)".format(self.epoch,
-                                                    time.time() - s))
-            self.meta['iteration'] += self.meta['iterations_per_epoch']
+                if i % 20 == 0:
+                    if not self.perform_validation_during_training:
+                        self.history.append(self.stats_manager.summarize())
+                    else:
+                        self.history.append((self.stats_manager.summarize(), self.evaluate()))
+                    self.stats_manager.init()
+#                 self.history.append({'loss': loss.item()})
+                    print("Epoch {} batch {} (Time: {:.2f}s)".format(self.epoch, i, time.time() - s))
+                i += 1
             self.save()
+#             self.meta['iteration'] += self.meta['iterations_per_epoch']
             if plot is not None:
                 plot(self)
+
         print("Finish training for {} epochs".format(num_epochs))
 
     def evaluate(self):

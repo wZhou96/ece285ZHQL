@@ -251,8 +251,8 @@ def get_traintest(root_dir):
 def getdata(root_dir, image_size=416, sample=-1, batch_size=64):
     transform = tv.transforms.Compose([
         ### incomplete, bunch of transform funtions needed to add
-#         RandomCrop(),
-#         RandomFlip(),
+        RandomCrop(),
+        RandomFlip(),
         Rescale((image_size, image_size)),
         TransformBoxCoords(),
         Normalize(),

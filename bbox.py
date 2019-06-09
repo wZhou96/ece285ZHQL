@@ -145,7 +145,9 @@ def get_nms_boxes(output, obj_thresh, iou_thresh):
         for class_id in range(n_classes):
             bboxes_state = ((class_ids==class_id).float() * (scores[:, class_id] > obj_thresh).float() * box_tags).long().float()
                         
-            while (torch.sum(bboxes_state==-1) > 0).data[0]:
+#             while (torch.sum(bboxes_state==-1) > 0).data[0]:
+            print((torch.sum(bboxes_state==-1) > 0).data)
+            while (torch.sum(bboxes_state==-1) > 0).data:
                 max_conf, index = torch.max(scores[:, class_id] * (bboxes_state==-1).float(), 0)
                 bboxes_state = ((ious[index] < iou_thresh)[0].float() * bboxes_state).long().float()
                 bboxes_state[index] = 1
@@ -220,7 +222,8 @@ def get_nms_detections(output, obj_thresh, iou_thresh):
         final_boxes = Variable(torch.FloatTensor())
         if torch.cuda.is_available():
             final_boxes = final_boxes.cuda()
-        while (torch.sum(bboxes_state==-1) > 0).data[0]:
+#         while (torch.sum(bboxes_state==-1) > 0).data[0]:
+        while (torch.sum(bboxes_state==-1) > 0).data:
             max_conf, index = torch.max(confidences * (bboxes_state==-1).float(), 0)
             bboxes_state = ((ious[index] < iou_thresh)[0].float() * bboxes_state).long().float()
             bboxes_state[index] = 1
