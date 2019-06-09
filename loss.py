@@ -145,10 +145,10 @@ class YoloLoss(nn.modules.loss._Loss):
                     [torch.zeros_like(self.anchors), self.anchors], 1)
             gt = torch.zeros(len(truth), 4)
             for i, anno in enumerate(truth):
-                gt[i, 0] = (anno[0] + anno[2] / 2) / self.reduction
-                gt[i, 1] = (anno[1] + anno[3] / 2) / self.reduction
-                gt[i, 2] = anno[2] / self.reduction
-                gt[i, 3] = anno[3] / self.reduction
+                gt[i, 0] = (anno[1] + anno[3] / 2) / self.reduction
+                gt[i, 1] = (anno[2] + anno[4] / 2) / self.reduction
+                gt[i, 2] = anno[3] / self.reduction
+                gt[i, 3] = anno[4] / self.reduction
 
             # Set confidence mask of matching detections to 0
             iou_gt_pred = bbox_ious(gt, cur_pred_boxes)
@@ -177,7 +177,7 @@ class YoloLoss(nn.modules.loss._Loss):
                 tcoord[b][best_n][3][gj * width + gi] = math.log(
                     max(gt[i, 3], 1.0) / self.anchors[best_n, 1])
                 tconf[b][best_n][gj * width + gi] = iou
-                tcls[b][best_n][gj * width + gi] = int(anno[4])
+                tcls[b][best_n][gj * width + gi] = int(anno[0])
 
         return coord_mask, conf_mask, cls_mask, tcoord, tconf, tcls
 
