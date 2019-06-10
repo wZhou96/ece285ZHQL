@@ -6,22 +6,17 @@ from PIL import Image
 from collections import defaultdict
 import math
 from copy import deepcopy
-import pandas as pd
 import struct, os
 import re, numpy as np
-from skimage import transform
+# from skimage import transform
 import itertools, operator
 import pickle
-from torch.optim.lr_scheduler import _LRScheduler
-# from nltk.corpus import wordnet as wn
 
 import os
 import sys
-import xml.etree.ElementTree as ET
 import glob
 
 import numpy as np
-from PIL import Image
 import torch
 from torch import nn
 import torch.nn.functional as F
@@ -31,8 +26,52 @@ import torchvision.transforms as transforms
 from torch.autograd import Variable
 from torch.utils.data import Dataset, DataLoader, ConcatDataset
 
+def bbox_overlap_iou(bboxes1, bboxes2, is_anchor):
+    """
+    Args:
+        bboxes1: shape (total_bboxes1, 4)
+            with x1, y1, x2, y2 point order.
+        bboxes2: shape (total_bboxes2, 4)
+            with x1, y1, x2, y2 point order.
+        p1 *-----        
+           |     |
+           |_____* p2
+    Returns:
+        Tensor with shape (total_bboxes1, total_bboxes2)
+        with the IoU (intersection over union) of bboxes1[i] and bboxes2[j]
+        in [i, j].
+    """
+#     import pdb; pdb.set_trace()
+    x1, y1, w1, h1 = bboxes1.chunk(4, dim=-1)
+    x2, y2, w2, h2 = bboxes2.chunk(4, dim=-1)
+    
+    x11 = x1 - 0.5*w1
+    y11 = y1 - 0.5*h1
+    x12 = x1 + 0.5*w1
+    y12 = y1 + 0.5*h1
+    x21 = x2 - 0.5*w2
+    y21 = y2 - 0.5*h2
+    x22 = x2 + 0.5*w2
+    y22 = y2 + 0.5*h2
 
-def Yolov2Loss(output, labels, n_truths):
+    xI1 = torch.max(x11, x21.transpose(1, 0))
+    yI1 = torch.max(y11, y21.transpose(1, 0))
+    
+    xI2 = torch.min(x12, x22.transpose(1, 0))
+    yI2 = torch.min(y12, y22.transpose(1, 0))
+
+    inner_box_w = torch.clamp((xI2 - xI1), min=0)
+    inner_box_h = torch.clamp((yI2 - yI1), min=0)
+    
+    inter_area = inner_box_w * inner_box_h
+    bboxes1_area = (x12 - x11) * (y12 - y11)
+    bboxes2_area = (x22 - x21) * (y22 - y21)
+
+    union = (bboxes1_area + bboxes2_area.transpose(1, 0)) - inter_area
+    return torch.clamp(inter_area / union, min=0)
+
+def loss(output, labels, n_truths, meta):
+                       
     B = meta['anchors']
     C = meta['classes']
     batch_size = meta['batch_size']
@@ -62,7 +101,7 @@ def Yolov2Loss(output, labels, n_truths):
                                                                   [x]))),
                         range(H)))).reshape(1, H, W, 1, 2))).float()
 
-    zero_pad = Variable(torch.zeros(2).contiguous().view(1, 2)).float()
+    zero_pad = Variable(torch.zeros(2).contiguous().view(2,1)).float()
     pad_var = Variable(torch.zeros(2 * B).contiguous().view(B, 2)).float()
 
     loss = Variable(torch.Tensor([0])).float()
@@ -93,7 +132,7 @@ def Yolov2Loss(output, labels, n_truths):
 
     predicted = output.permute(0, 2, 3, 1)
     predicted = predicted.contiguous().view(-1, H, W, B, (4 + 1 + C))
-
+    
     sigmoid = torch.nn.Sigmoid()
     softmax = torch.nn.Softmax(dim=4)
 
@@ -112,11 +151,11 @@ def Yolov2Loss(output, labels, n_truths):
             continue
 
         pred_outputs = torch.cat([adjusted_coords[batch], adjusted_wh[batch]],
-                                 3)
+                                 3)        
         true_labels = labels[batch, :n_true, 1:]
 
         bboxes_iou = bbox_overlap_iou(pred_outputs, true_labels, False)
-
+        
         # objectness loss (if iou < threshold)
         boxes_max_iou = torch.max(bboxes_iou, -1)[0]
         all_obj_mask = boxes_max_iou.le(threshold)
@@ -139,8 +178,8 @@ def Yolov2Loss(output, labels, n_truths):
             truth_iter = int(truth_iter)
             truth_box = labels[batch, truth_iter]
             anchor_select = bbox_overlap_iou(
-                torch.cat([zero_pad.t(), truth_box[3:]], 0).t(), anchor_padded,
-                True)
+                torch.cat([zero_pad, truth_box[3:].view(-1,1)], 0).t(), anchor_padded,
+                True)       # zero_pad is a shape(2, 1) array
 
             # find the responsible anchor box
             anchor_id = torch.max(anchor_select, 1)[1]
@@ -155,13 +194,15 @@ def Yolov2Loss(output, labels, n_truths):
                 B, 2).index_select(0, anchor_id.long())).log()
             if (truth_wh[0] == Variable(
                     -torch.cuda.FloatTensor([float('inf')]))).data[0] == 1:
+#             if (truth_wh[0] == Variable(
+#                     -torch.FloatTensor([float('inf')]))).data[0] == 1:       # cpu version 
                 import pdb
                 pdb.set_trace()
 
             truth_coords = torch.cat(
-                [truth_x.unsqueeze(0),
-                 truth_y.unsqueeze(0), truth_wh], 1)
-
+                (truth_x.unsqueeze(0).view(1,-1),
+                 truth_y.unsqueeze(0).view(1,-1), truth_wh), 1)
+            
             predicted_output = predicted[batch].index_select(
                 0, h_j.long()).index_select(1, w_i.long()).index_select(
                     2, anchor_id.long())[0][0][0]
