@@ -11,6 +11,7 @@ from torch import nn
 import torch.utils.data as td
 from abc import ABC, abstractmethod
 from torch.autograd import Variable
+from utils import *
 
 
 class NeuralNetwork(nn.Module, ABC):
@@ -152,19 +153,24 @@ class Experiment(object):
                  perform_validation_during_training=False):
 
         # Define data loaders
-        train_loader = td.DataLoader(train_set,
-                                     batch_size=batch_size,
-                                     shuffle=True,
-                                     drop_last=True,
-                                     pin_memory=True)
-        val_loader = td.DataLoader(val_set,
-                                   batch_size=batch_size,
-                                   shuffle=False,
-                                   drop_last=True,
-                                   pin_memory=True)
+        
+        training_params = {"batch_size": batch_size,
+                       "shuffle": True,
+                       "drop_last": True,
+                       "collate_fn": custom_collate_fn}
+
+        train_loader = td.DataLoader(train_set, **training_params)
+        
+        test_params = {"batch_size": batch_size,
+                   "shuffle": False,
+                   "drop_last": False,
+                   "collate_fn": custom_collate_fn}
+
+        val_loader = td.DataLoader(val_set, **test_params)
 
         # Initialize history
         history = []
+        update_per_epoch = meta['train_samples']/batch_size/20
 
         # Define checkpoint paths
         if output_dir is None:
@@ -179,12 +185,12 @@ class Experiment(object):
 
         # Load checkpoint and check compatibility
         if os.path.isfile(config_path):
-            with open(config_path, 'r') as f:
-                if f.read()[:-1] != repr(self):
-                    raise ValueError(
-                        "Cannot create this experiment: "
-                        "I found a checkpoint conflicting with the current setting."
-                    )
+#             with open(config_path, 'r') as f:
+#                 if f.read()[:-1] != repr(self):
+#                     raise ValueError(
+#                         "Cannot create this experiment: "
+#                         "I found a checkpoint conflicting with the current setting."
+#                     )
             self.load()
         else:
             self.save()
@@ -192,7 +198,7 @@ class Experiment(object):
     @property
     def epoch(self):
         """Returns the number of epochs already performed."""
-        return int(len(self.history)/18)
+        return int(len(self.history)/self.update_per_epoch)
 
     def setting(self):
         """Returns the setting of the experiment."""
@@ -281,18 +287,16 @@ class Experiment(object):
         print("Start/Continue training from epoch {}".format(start_epoch))
         if plot is not None:
             plot(self)
+        s = time.time()
         for epoch in range(start_epoch, num_epochs):
 #             self.stats_manager.init()
             i = 0
-            for xdict in self.train_loader:
-                s = time.time()
-                x = Variable(xdict['image'], requires_grad=True).cuda().float()
-                d = Variable(xdict['bboxes'],
-                             requires_grad=True).cuda().float()
-                ntrue = xdict['n_true'].cuda()
+            for x, d in self.train_loader:
+                x = Variable(x.cuda(), requires_grad=True)
+#                 d = Variable(d.cuda(), requires_grad=True)
                 self.optimizer.zero_grad()
                 y = self.net.forward(x)
-                loss = self.net.criterion(y, d, ntrue)
+                loss = self.net.criterion(y, d)
                 loss.backward()
                 self.optimizer.step()
                 with torch.no_grad():
@@ -305,6 +309,7 @@ class Experiment(object):
                     self.stats_manager.init()
 #                 self.history.append({'loss': loss.item()})
                     print("Epoch {} batch {} (Time: {:.2f}s)".format(self.epoch, i, time.time() - s))
+                    s = time.time()
                 i += 1
             self.save()
 #             self.meta['iteration'] += self.meta['iterations_per_epoch']
@@ -321,12 +326,12 @@ class Experiment(object):
         self.stats_manager.init()
         self.net.eval()
         with torch.no_grad():
-            for xdict in self.val_loader:
-                x = xdict['image'].to(self.net.device).float()
-                d = xdict['bboxes'].to(self.net.device).float()
-                ntrue = xdict['n_true'].to(self.net.device)
+            for x, d in self.val_loader:
+                x = x.to(self.net.device).float()
+#                 d = d.to(self.net.device).float()
+#                 ntrue = xdict['n_true'].to(self.net.device)
                 y = self.net.forward(x)
-                loss = self.net.criterion(y, d, ntrue)
+                loss = self.net.criterion(y, d)
                 self.stats_manager.accumulate(loss.item(), x, y, d)
         self.net.train()
         return self.stats_manager.summarize()

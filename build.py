@@ -42,6 +42,8 @@ class Yolov2(nt.NeuralNetwork):
     
     def __init__(self):
         super(Yolov2, self).__init__()
+        self.anchors = [(1.3221, 1.73145), (3.19275, 4.00944), (5.05587, 8.09892), (9.47112, 4.84053),
+                          (11.2364, 10.0071)]
         
         self.conv1 = nn.Conv2d(in_channels=3, out_channels=32, kernel_size=3, stride=1, padding=1, bias=False)
         self.batchnorm1 = nn.BatchNorm2d(32)
@@ -150,11 +152,9 @@ class Yolov2(nt.NeuralNetwork):
 
         return out
     
-    def criterion(self, y, d, ntrue):
-        anchors = [(1.3221, 1.73145), (3.19275, 4.00944), (5.05587, 8.09892), (9.47112, 4.84053),
-                          (11.2364, 10.0071)]
-        loss = YoloLoss(20, anchors)
-        return loss.forward(y, d, ntrue)
+    def criterion(self, y, d):
+        loss = YoloLoss(20, self.anchors)
+        return loss.forward(y, d)
         
 
 
