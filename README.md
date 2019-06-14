@@ -8,7 +8,9 @@ Requirements
 ============
 cuda  
 pytorch  
-Please download pretrained and trained weights from google drive:https://drive.google.com/drive/folders/1nIyX9nT-zzKzDzE7y6jjGQfBfV0esDdy?usp=sharing
+Please download pretrained and trained weights from google drive:
+https://drive.google.com/drive/folders/1nIyX9nT-zzKzDzE7y6jjGQfBfV0esDdy?usp=sharing
+https://drive.google.com/a/eng.ucsd.edu/file/d/19VQctTuPGC2_AQiSIUMnBZEo9AEbcytJ/view?usp=sharing
 
 Code organization
 =================
